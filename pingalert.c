@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <curl/curl.h>
 #include <argp.h>
 #include <syslog.h>
@@ -14,6 +15,9 @@
 
 const char* UP = "up";
 const char* DOWN = "down";
+
+// ping executable path
+char* pingPath;
 
 typedef struct Target {
   char* type;
@@ -156,7 +160,7 @@ bool pingCheck(const char* ip) {
     exit(1);
   } else if (p == 0) {
     dup2(pipe_arr[1], STDOUT_FILENO);
-    execl("/usr/bin/ping", "ping", "-c", "1", ip, (char*)NULL);
+    execl(pingPath, "ping", "-c", "1", ip, (char*)NULL);
     perror("exec ping failed");
     exit(1);
   }
@@ -343,8 +347,41 @@ void update() {
   }
 }
 
+char* which(char* name) {
+  char* path = getenv("PATH");
+  if(path == NULL) {
+    return NULL;
+  }
+  int pathLen = strlen(path);
+  char pc[pathLen+1];
+  strcpy(pc, path);
+  //printf("%s\n", pc);
+  char delims[] = ":";
+  char *result = NULL;
+  result = strtok(pc, delims);
+  char buf[64*1024];
+  while(result != NULL) {
+    char* dp = result;
+    //printf("%s\n", dp);
+    snprintf(buf, sizeof(buf), "%s/%s", dp, name);
+    //printf("%s\n", buf);
+    struct stat st = {0};
+    if(stat(buf, &st) == 0) {
+      char *p = malloc( sizeof(char) * ( strlen(buf) + 1 ) );
+      strcpy(p, buf);
+      return p;
+    }
+    result = strtok(NULL, delims);
+  }
+  return NULL;
+}
+
 int main(int argc, char **argv) {
-  info(argp_program_version);
+  pingPath= which("ping");
+  if(pingPath == NULL) {
+    perror("ping executable not found\n");
+    exit(1);
+  }
   char msg[1024];
   args.interval = 60;
   args.verbose = false;
@@ -357,6 +394,12 @@ int main(int argc, char **argv) {
     args.target[i] = NULL;
   }
   argp_parse(&argp, argc, argv, 0, 0, &args);
+  info(argp_program_version);
+  if(args.verbose) {
+    // TODO use info instead of printf
+    printf("ping path '%s'\n", pingPath);
+  }
+  // TODO check that notifyre api-key is set
   if(args.targets == 0) {
     snprintf(msg, sizeof(msg), "no targets, add at least 1 target via -t option");
     info(msg);
