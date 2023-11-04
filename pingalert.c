@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -125,6 +126,35 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 
 static struct argp argp = { options, parse_opt, args_doc, doc, 0, 0, 0 };
 
+void datetime(char* buf, size_t bufSize) {
+  time_t rawtime;
+    struct tm * timeinfo;
+    time ( &rawtime );
+    timeinfo = localtime ( &rawtime );
+    snprintf(buf, bufSize, "%d-%02d-%02dT%02d:%02d:%02d",
+           timeinfo->tm_year + 1900,
+           timeinfo->tm_mon + 1,
+           timeinfo->tm_mday,
+           timeinfo->tm_hour,
+           timeinfo->tm_min,
+           timeinfo->tm_sec);
+}
+
+void die(const char* format, ...) {
+  va_list plist;
+  va_start(plist, format);
+  if(args.syslog) {
+    syslog(LOG_ERR, format, plist);
+  } else {
+    char buf[1024];
+    datetime(buf, sizeof(buf));
+    fprintf(stderr, "%s ", buf);
+    fprintf(stderr, format, plist);
+  }
+  va_end(plist);
+  exit(1);
+}
+
 void info(const char* msg) {
   if(args.syslog) {
     syslog(LOG_INFO, "%s\n", msg);
@@ -156,18 +186,15 @@ bool pingCheck(const char* ip) {
   pipe(pipe_arr);
   pid_t p = fork();
   if(p == -1) {
-    perror("fork failed");
-    exit(1);
+    die("fork failed\n");
   } else if (p == 0) {
     dup2(pipe_arr[1], STDOUT_FILENO);
     execl(pingPath, "ping", "-c", "1", ip, (char*)NULL);
-    perror("exec ping failed");
-    exit(1);
+    die("exec ping failed\n");
   }
   int exitStatus;
   if(waitpid(p, &exitStatus, 0) == -1) {
-    perror("waitpid failed");
-    exit(1);
+    die("waitpid failed\n");
   }
   close(pipe_arr[0]);
   close(pipe_arr[1]);
@@ -175,7 +202,7 @@ bool pingCheck(const char* ip) {
     const int es = WEXITSTATUS(exitStatus);
     return es==0?true:false;
   }
-  perror("WIFEXITED failed");
+  die("WIFEXITED failed\n");
   exit(1);
 }
 
@@ -210,7 +237,7 @@ bool httpCheck(const char *url) {
       return false;
     }
   } else {
-    perror("init curl failed");
+    die("init curl failed\n");
     exit(1);
   }
 }
@@ -250,7 +277,7 @@ void sendSMSCurl(char* msg, char* group) {
     curl_slist_free_all(list);
     curl_easy_cleanup(curl);
   } else {
-    perror("init curl failed");
+    die("init curl failed\n");
     exit(1);
   }
 }
@@ -310,7 +337,7 @@ bool checkTarget(Target* target) {
   } else if(strcmp("http", target->type) == 0) {
     return httpCheck(target->address);
   } else {
-    info("unknown target type");
+    die("unknown target type\n");
     exit(1);
   }
 }
@@ -377,11 +404,6 @@ char* which(char* name) {
 }
 
 int main(int argc, char **argv) {
-  pingPath= which("ping");
-  if(pingPath == NULL) {
-    perror("ping executable not found\n");
-    exit(1);
-  }
   char msg[1024];
   args.interval = 60;
   args.verbose = false;
@@ -395,15 +417,17 @@ int main(int argc, char **argv) {
   }
   argp_parse(&argp, argc, argv, 0, 0, &args);
   info(argp_program_version);
+  pingPath= which("ping");
   if(args.verbose) {
     // TODO use info instead of printf
     printf("ping path '%s'\n", pingPath);
   }
+  if(pingPath == NULL) {
+    die("ping executable not found, make sure ping is installed and on the $PATH\n");
+  }
   // TODO check that notifyre api-key is set
   if(args.targets == 0) {
-    snprintf(msg, sizeof(msg), "no targets, add at least 1 target via -t option");
-    info(msg);
-    exit(1);
+    die("no targets, add at least 1 target via -t option\n");
   }
   if(args.interval <= 0) {
     args.interval = 60;
