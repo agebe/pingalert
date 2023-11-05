@@ -162,6 +162,20 @@ void die(const char* format, ...) {
   exit(1);
 }
 
+void warn(const char* format, ...) {
+  va_list plist;
+  va_start(plist, format);
+  if(args.syslog) {
+    vsyslog(LOG_WARNING, format, plist);
+  } else {
+    char buf[1024];
+    datetime(buf, sizeof(buf));
+    printf("%s WARN ", buf);
+    vprintf(format, plist);
+   }
+  va_end(plist);
+}
+
 void info(const char* format, ...) {
   va_list plist;
   va_start(plist, format);
@@ -396,7 +410,7 @@ int main(int argc, char **argv) {
   args.targets = 0;
   args.prefix = "";
   args.maxfail = 5;
-  args.notifyreApiToken = "";
+  args.notifyreApiToken = NULL;
   for(int i=0;i<MAX_TARGETS;i++) {
     args.target[i] = NULL;
   }
@@ -412,10 +426,13 @@ int main(int argc, char **argv) {
   if(pingPath == NULL) {
     die("ping executable not found, make sure ping is installed and on the $PATH\n");
   }
-  // TODO check that notifyre api-key is set
-  if(args.targets == 0) {
-    die("no targets, add at least 1 target via -t option\n");
+  if(args.notifyreApiToken == NULL) {
+    warn("no notifyre api key has been set (option --notifyre-api-key), SMS notifications can't be send\n");
   }
+  if(args.targets == 0) {
+    warn("no targets, add at least 1 target via -t option\n");
+  }
+  // TODO check that each target has a group (or default is set
   if(args.interval <= 0) {
     args.interval = 60;
   }
