@@ -51,7 +51,7 @@ char* targetGroup(Target* target) {
   return target->group!=NULL?target->group:args.group;
 }
 
-const char *argp_program_version = "pingalert 0.1.0";
+const char *argp_program_version = "pingalert 0.2.0-SNAPSHOT";
 const char *argp_program_bug_address = "andre.gebers@gmail.com";
 static char doc[] = "";
 static char args_doc[] = "";
@@ -140,38 +140,35 @@ void datetime(char* buf, size_t bufSize) {
            timeinfo->tm_sec);
 }
 
+// https://www.ozzu.com/wiki/504927/writing-a-custom-printf-wrapper-function-in-c
 void die(const char* format, ...) {
   va_list plist;
   va_start(plist, format);
   if(args.syslog) {
-    syslog(LOG_ERR, format, plist);
+    vsyslog(LOG_ERR, format, plist);
   } else {
     char buf[1024];
     datetime(buf, sizeof(buf));
     fprintf(stderr, "%s ", buf);
-    fprintf(stderr, format, plist);
+    vfprintf(stderr, format, plist);
   }
   va_end(plist);
   exit(1);
 }
 
-void info(const char* msg) {
+void info(const char* format, ...) {
+  va_list plist;
+  va_start(plist, format);
   if(args.syslog) {
-    syslog(LOG_INFO, "%s\n", msg);
+    vsyslog(LOG_INFO, format, plist);
   } else {
-    time_t rawtime;
-    struct tm * timeinfo;
-    time ( &rawtime );
-    timeinfo = localtime ( &rawtime );
-    printf("%d-%02d-%02dT%02d:%02d:%02d %s\n",
-           timeinfo->tm_year + 1900,
-           timeinfo->tm_mon + 1,
-           timeinfo->tm_mday,
-           timeinfo->tm_hour,
-           timeinfo->tm_min,
-           timeinfo->tm_sec,
-           msg);
-  }
+    // https://stackoverflow.com/questions/1716296/why-does-printf-not-flush-after-the-call-unless-a-newline-is-in-the-format-strin
+    char buf[1024];
+    datetime(buf, sizeof(buf));
+    printf("%s ", buf);
+    vprintf(format, plist);
+   }
+  va_end(plist);
 }
 
 const char* btos(bool b) {
@@ -266,13 +263,9 @@ void sendSMSCurl(char* msg, char* group) {
     if(res == CURLE_OK) {
       long httpStatus;
       curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpStatus);
-      char log[2048];
-      snprintf(log, sizeof(log), "notifyre send sms post call returned status '%ld'", httpStatus);
-      info(log);
+      info("notifyre send sms post call returned status '%ld'\n", httpStatus);
     } else {
-      char log[2048];
-      snprintf(log, sizeof(log), "notifyre send sms post call failed");
-      info(log);
+      info("notifyre send sms post call failed\n");
     }
     curl_slist_free_all(list);
     curl_easy_cleanup(curl);
@@ -286,24 +279,19 @@ void sendSMS(char* smsMsg, char* group) {
   char sms[160];
   snprintf(sms, sizeof(sms), "%s%s", args.prefix, smsMsg);
   if(group != NULL) {
-    char msg[2048];
-    snprintf(msg, sizeof(msg), "send SMS '%s' to group '%s'", sms, group);
-    info(msg);
+    info("send SMS '%s' to group '%s'\n", sms, group);
     sendSMSCurl(sms, group);
   } else {
-    char msg[2048];
-    snprintf(msg, sizeof(msg), "WARN, can't send SMS '%s', no group has been setup for target", sms);
-    info(msg);
+    info("WARN, can't send SMS '%s', no group has been setup for target\n", sms);
   }
 }
 
 void serviceUp(Target* target) {
-  char msg[1024];
   if(target->failed > 0) {
-   snprintf(msg, sizeof(msg), "service '%s' is back to normal", target->url);
-   info(msg);
+   info("service '%s' is back to normal\n", target->url);
  }
  if(target->failed >= args.maxfail) {
+   char msg[1024];
    snprintf(msg, sizeof(msg), "service '%s' is back to normal", targetName(target));
    sendSMS(msg, targetGroup(target));
  }
@@ -311,26 +299,22 @@ void serviceUp(Target* target) {
 }
 
 void serviceDown(Target* target) {
-  char msg[1024];
   if(target->failed < args.maxfail) {
     target->failed++;
     if(target->failed >= args.maxfail) {
-      snprintf(msg, sizeof(msg), "ALERT, service '%s' is down", target->url);
-      info(msg);
+      info("ALERT, service '%s' is down\n", target->url);
+      char msg[1024];
       snprintf(msg, sizeof(msg), "service '%s' is down", targetName(target));
       sendSMS(msg, targetGroup(target));
     } else {
-      snprintf(msg, sizeof(msg), "WARN, service '%s' failed, count '%d'", target->url, target->failed);
-      info(msg);
+      info("WARN, service '%s' failed, count '%d'\n", target->url, target->failed);
     }
   }
 }
 
 bool checkTarget(Target* target) {
   if(args.verbose) {
-    char msg[1024];
-    snprintf(msg, sizeof(msg), "check target '%s'", target->url);
-    info(msg);
+    info("check target '%s'\n", target->url);
   }
   if(strcmp("ping", target->type) == 0) {
     return pingCheck(target->address);
@@ -351,9 +335,7 @@ void init() {
     } else {
       target->failed = args.maxfail;
     }
-    char msg[1024];
-    snprintf(msg, sizeof(msg), "target '%s' is %s", target->url, btos(up));
-    info(msg);
+    info("target '%s' is %s\n", target->url, btos(up));
   }
 }
 
@@ -367,9 +349,7 @@ void update() {
       serviceDown(target);
     }
     if(args.verbose) {
-      char msg[1024];
-      snprintf(msg, sizeof(msg), "target '%s' is %s", target->url, btos(up));
-      info(msg);
+      info("target '%s' is %s\n", target->url, btos(up));
     }
   }
 }
@@ -404,7 +384,6 @@ char* which(char* name) {
 }
 
 int main(int argc, char **argv) {
-  char msg[1024];
   args.interval = 60;
   args.verbose = false;
   args.syslog = false;
@@ -416,11 +395,10 @@ int main(int argc, char **argv) {
     args.target[i] = NULL;
   }
   argp_parse(&argp, argc, argv, 0, 0, &args);
-  info(argp_program_version);
+  info("%s\n", argp_program_version);
   pingPath= which("ping");
   if(args.verbose) {
-    // TODO use info instead of printf
-    printf("ping path '%s'\n", pingPath);
+    info("ping path '%s'\n", pingPath);
   }
   if(pingPath == NULL) {
     die("ping executable not found, make sure ping is installed and on the $PATH\n");
@@ -441,8 +419,7 @@ int main(int argc, char **argv) {
   if(args.maxfail > 1000) {
     args.maxfail = 1000;
   }
-  snprintf(msg, sizeof(msg), "interval '%d' seconds, max fail '%d'", args.interval, args.maxfail);
-  info(msg);
+  info("interval '%d' seconds, max fail '%d'\n", args.interval, args.maxfail);
   init();
   for(;;) {
     sleep(args.interval);
