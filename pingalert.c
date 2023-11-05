@@ -411,6 +411,7 @@ int main(int argc, char **argv) {
   args.prefix = "";
   args.maxfail = 5;
   args.notifyreApiToken = NULL;
+  args.group = NULL;
   for(int i=0;i<MAX_TARGETS;i++) {
     args.target[i] = NULL;
   }
@@ -431,6 +432,11 @@ int main(int argc, char **argv) {
   }
   if(args.targets == 0) {
     warn("no targets, add at least 1 target via -t option\n");
+  }
+  for(int i=0;i<args.targets;i++) {
+    if((args.target[i]->group == NULL) && (args.group == NULL)) {
+      warn("target '%s' has no group, SMS notification can't be send for this target\n", args.target[i]->url);
+    }
   }
   // TODO check that each target has a group (or default is set
   if(args.interval <= 0) {
