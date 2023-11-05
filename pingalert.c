@@ -438,7 +438,6 @@ int main(int argc, char **argv) {
       warn("target '%s' has no group, SMS notification can't be send for this target\n", args.target[i]->url);
     }
   }
-  // TODO check that each target has a group (or default is set
   if(args.interval <= 0) {
     args.interval = 60;
   }
