@@ -13,6 +13,8 @@
 #include <string.h>
 
 #define MAX_TARGETS 1024
+// set to true when too many targets have been specified
+bool tooManyTargets = false;
 
 const char* UP = "up";
 const char* DOWN = "down";
@@ -72,6 +74,10 @@ bool startsWith(const char *string, const char *prefix) {
 }
 
 void addTarget(char* arg) {
+  if(args.targets >= MAX_TARGETS) {
+    tooManyTargets = true;
+    return;
+  }
   char *str;
   char *url;
   char *name;
@@ -396,6 +402,9 @@ int main(int argc, char **argv) {
   }
   argp_parse(&argp, argc, argv, 0, 0, &args);
   info("%s\n", argp_program_version);
+  if(tooManyTargets) {
+    die("too many targets, max is '%d'\n", MAX_TARGETS);
+  }
   pingPath= which("ping");
   if(args.verbose) {
     info("ping path '%s'\n", pingPath);
