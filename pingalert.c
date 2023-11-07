@@ -70,7 +70,7 @@ char* targetGroup(Target* target) {
   return target->group!=NULL?target->group:args.group;
 }
 
-const char *argp_program_version = "pingalert 0.2.0-SNAPSHOT";
+const char *argp_program_version = "pingalert 0.2.0";
 const char *argp_program_bug_address = "andre.gebers@gmail.com";
 static char doc[] = "";
 static char args_doc[] = "";
