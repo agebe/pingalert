@@ -57,6 +57,7 @@ typedef struct Arguments {
   char* notifyreApiToken;
   char* execNotify;
   char* execWarn;
+  bool noSms;
 } Arguments;
 
 Arguments args;
@@ -84,6 +85,7 @@ static struct argp_option options[] = {
     { "notifyre-api-key", 'k', "<notifyre-api-key>", 0, "the http header x-api-token to use when sending sms, https://docs.notifyre.com/api/sms-send"},
     { "notify", 'n', "<path>", 0, "execute program when a service goes up or down"},
     { "warn", 'w', "<path>", 0, "execute program when a service is about to go down (fails test before reaching max-fail)"},
+    { "no-sms", 'x', 0, 0, "do not send out sms, only log and execute specified notify/warn executables"},
     { 0 }
 };
 
@@ -144,6 +146,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     case 'k': arguments->notifyreApiToken = arg; break;
     case 'n': arguments->execNotify = arg; break;
     case 'w': arguments->execWarn = arg; break;
+    case 'x': arguments->noSms = true; break;
     case ARGP_KEY_ARG: return 0;
     default: return ARGP_ERR_UNKNOWN;
   }
@@ -318,7 +321,9 @@ void sendSMSCurl(char* msg, char* group) {
 void sendSMS(char* smsMsg, char* group) {
   char sms[160];
   snprintf(sms, sizeof(sms), "%s%s", args.prefix, smsMsg);
-  if(args.notifyreApiToken == NULL) {
+  if(args.noSms) {
+    return;
+  } else if(args.notifyreApiToken == NULL) {
     warn("no notifyre api key has been set (option --notifyre-api-key), SMS notifications '%s' can't be send\n", sms);
   } else if(group != NULL) {
     info("send SMS '%s' to group '%s'\n", sms, group);
@@ -467,6 +472,7 @@ int main(int argc, char **argv) {
   args.group = NULL;
   args.execNotify = NULL;
   args.execWarn = NULL;
+  args.noSms = false;
   for(int i=0;i<MAX_TARGETS;i++) {
     args.target[i] = NULL;
   }
@@ -482,7 +488,7 @@ int main(int argc, char **argv) {
   if(pingPath == NULL) {
     die("ping executable not found, make sure ping is installed and on the $PATH\n");
   }
-  if(args.notifyreApiToken == NULL) {
+  if((args.notifyreApiToken == NULL) && (args.noSms == false)) {
     warn("no notifyre api key has been set (option --notifyre-api-key), SMS notifications can't be send\n");
   }
   if(args.targets == 0) {
