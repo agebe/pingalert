@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -41,6 +40,8 @@ typedef struct Arguments {
   char* prefix;
   unsigned int maxfail;
   char* notifyreApiToken;
+  char* execNotify;
+  char* execWarn;
 } Arguments;
 
 Arguments args;
@@ -66,6 +67,8 @@ static struct argp_option options[] = {
     { "prefix", 'p', "<prefix>", 0, "sms prefix that is added to alert and back-to-normal SMS notifications"},
     { "max-fail", 'm', "<max-fail>", 0, "how many times the service check has to fail before a sms notification is send. defaults to 5"},
     { "notifyre-api-key", 'k', "<notifyre-api-key>", 0, "the http header x-api-token to use when sending sms, https://docs.notifyre.com/api/sms-send"},
+    { "notify", 'n', "<path>", 0, "execute program when a service goes up or down"},
+    { "warn", 'w', "<path>", 0, "execute program when a service is about to go down (fails test before reaching max-fail)"},
     { 0 }
 };
 
@@ -124,6 +127,8 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     case 'p': arguments->prefix = arg; break;
     case 'm': arguments->maxfail = atoi(arg); break;
     case 'k': arguments->notifyreApiToken = arg; break;
+    case 'n': arguments->execNotify = arg; break;
+    case 'w': arguments->execWarn = arg; break;
     case ARGP_KEY_ARG: return 0;
     default: return ARGP_ERR_UNKNOWN;
   }
@@ -298,11 +303,41 @@ void sendSMSCurl(char* msg, char* group) {
 void sendSMS(char* smsMsg, char* group) {
   char sms[160];
   snprintf(sms, sizeof(sms), "%s%s", args.prefix, smsMsg);
-  if(group != NULL) {
+  if(args.notifyreApiToken == NULL) {
+    warn("no notifyre api key has been set (option --notifyre-api-key), SMS notifications '%s' can't be send\n", sms);
+  } else if(group != NULL) {
     info("send SMS '%s' to group '%s'\n", sms, group);
     sendSMSCurl(sms, group);
   } else {
     info("WARN, can't send SMS '%s', no group has been setup for target\n", sms);
+  }
+}
+
+void execNotify(Target* target, bool up) {
+  if(args.execNotify == NULL) {
+    return;
+  }
+  pid_t p = fork();
+  if(p == -1) {
+    die("fork failed\n");
+  } else if (p == 0) {
+    execl(args.execNotify, args.execNotify, btos(up), target->type, target->url, target->address, target->name, target->group, (char*)NULL);
+    die("exec notify '%s' failed\n", args.execNotify);
+  }
+}
+
+void execWarn(Target* target) {
+  if(args.execWarn == NULL) {
+    return;
+  }
+  pid_t p = fork();
+  char count[10];
+  snprintf(count, sizeof(count), "%d", target->failed);
+  if(p == -1) {
+    die("fork failed\n");
+  } else if (p == 0) {
+    execl(args.execWarn, args.execWarn, count, target->type, target->url, target->address, target->name, target->group, (char*)NULL);
+    die("exec warn '%s' failed\n", args.execWarn);
   }
 }
 
@@ -314,6 +349,7 @@ void serviceUp(Target* target) {
    char msg[1024];
    snprintf(msg, sizeof(msg), "service '%s' is back to normal", targetName(target));
    sendSMS(msg, targetGroup(target));
+   execNotify(target, true);
  }
  target->failed = 0;
 }
@@ -326,8 +362,10 @@ void serviceDown(Target* target) {
       char msg[1024];
       snprintf(msg, sizeof(msg), "service '%s' is down", targetName(target));
       sendSMS(msg, targetGroup(target));
+      execNotify(target, false);
     } else {
       info("WARN, service '%s' failed, count '%d'\n", target->url, target->failed);
+      execWarn(target);
     }
   }
 }
@@ -412,6 +450,8 @@ int main(int argc, char **argv) {
   args.maxfail = 5;
   args.notifyreApiToken = NULL;
   args.group = NULL;
+  args.execNotify = NULL;
+  args.execWarn = NULL;
   for(int i=0;i<MAX_TARGETS;i++) {
     args.target[i] = NULL;
   }
