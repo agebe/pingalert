@@ -84,7 +84,7 @@ char* targetGroup(Target* target) {
   return isBlank(target->group)?args.group:target->group;
 }
 
-const char *argp_program_version = "pingalert 0.2.0";
+const char *argp_program_version = "pingalert 0.2.1";
 const char *argp_program_bug_address = "andre.gebers@gmail.com";
 static char doc[] = "";
 static char args_doc[] = "";
