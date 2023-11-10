@@ -25,6 +25,7 @@ limitations under the License.
 #include <argp.h>
 #include <syslog.h>
 #include <string.h>
+#include <ctype.h>
 
 #define MAX_TARGETS 1024
 // set to true when too many targets have been specified
@@ -62,12 +63,25 @@ typedef struct Arguments {
 
 Arguments args;
 
+bool isBlank(char* str) {
+  if(str == NULL) {
+    return true;
+  }
+  while(*str != '\0') {
+    if(!isspace((unsigned char)*str)) {
+      return false;
+    }
+    str++;
+  }
+  return true;
+}
+
 char* targetName(Target* target) {
-  return target->name!=NULL?target->name:target->address;
+  return isBlank(target->name)?target->address:target->name;
 }
 
 char* targetGroup(Target* target) {
-  return target->group!=NULL?target->group:args.group;
+  return isBlank(target->group)?args.group:target->group;
 }
 
 const char *argp_program_version = "pingalert 0.2.0";
